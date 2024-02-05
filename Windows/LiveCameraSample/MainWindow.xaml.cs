@@ -32,7 +32,6 @@
 // 
 
 using System;
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Net;
@@ -41,15 +40,15 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media.Imaging;
 using System.Windows.Navigation;
+using Azure;
+using Azure.AI.Vision.ImageAnalysis;
 using Microsoft.Azure.CognitiveServices.Vision.ComputerVision;
-using Microsoft.Azure.CognitiveServices.Vision.Face;
-using Microsoft.Azure.CognitiveServices.Vision.Face.Models;
-using Newtonsoft.Json.Linq;
 using OpenCvSharp;
 using OpenCvSharp.Extensions;
 using VideoFrameAnalyzer;
 using FaceAPI = Microsoft.Azure.CognitiveServices.Vision.Face;
 using VisionAPI = Microsoft.Azure.CognitiveServices.Vision.ComputerVision;
+
 
 namespace LiveCameraSample
 {
@@ -60,6 +59,7 @@ namespace LiveCameraSample
     {
         private FaceAPI.FaceClient _faceClient = null;
         private VisionAPI.ComputerVisionClient _visionClient = null;
+        private ImageAnalysisClient _imageAnalysis = null;
         private readonly FrameGrabber<LiveCameraResult> _grabber;
         private static readonly ImageEncodingParam[] s_jpegParams = {
             new ImageEncodingParam(ImwriteFlags.JpegQuality, 60)
@@ -72,9 +72,9 @@ namespace LiveCameraSample
 
         public enum AppMode
         {
-            Faces,
             Tags,
-            Celebrities
+            Description,
+            DenseCaption
         }
 
         public MainWindow()
@@ -124,7 +124,7 @@ namespace LiveCameraSample
                         string apiName = "";
                         string message = e.Exception.Message;
                         var faceEx = e.Exception as FaceAPI.Models.APIErrorException;
-                        var visionEx = e.Exception as VisionAPI.Models.ComputerVisionErrorException;
+                        var visionEx = e.Exception as VisionAPI.Models.ComputerVisionErrorResponseException;
                         if (faceEx != null)
                         {
                             apiName = "Face";
@@ -154,26 +154,6 @@ namespace LiveCameraSample
             _localFaceDetector.Load("Data/haarcascade_frontalface_alt2.xml");
         }
 
-        /// <summary> Function which submits a frame to the Face API. </summary>
-        /// <param name="frame"> The video frame to submit. </param>
-        /// <returns> A <see cref="Task{LiveCameraResult}"/> representing the asynchronous API call,
-        ///     and containing the faces returned by the API. </returns>
-        private async Task<LiveCameraResult> FacesAnalysisFunction(VideoFrame frame)
-        {
-            // Encode image. 
-            var jpg = frame.Image.ToMemoryStream(".jpg", s_jpegParams);
-            // Submit image to API. 
-            var attrs = new List<FaceAPI.Models.FaceAttributeType> {
-                FaceAPI.Models.FaceAttributeType.Glasses,
-                FaceAPI.Models.FaceAttributeType.HeadPose,
-            };
-
-            var faces = await _faceClient.Face.DetectWithStreamAsync(jpg, returnFaceId: false, returnFaceAttributes: attrs);
-            // Count the API call. 
-            Properties.Settings.Default.FaceAPICallCount++;
-            // Output. 
-            return new LiveCameraResult { Faces = faces.ToArray() };
-        }
 
         /// <summary> Function which submits a frame to the Computer Vision API for tagging. </summary>
         /// <param name="frame"> The video frame to submit. </param>
@@ -191,31 +171,46 @@ namespace LiveCameraSample
             return new LiveCameraResult { Tags = tagResult.Tags.ToArray() };
         }
 
-        /// <summary> Function which submits a frame to the Computer Vision API for celebrity
-        ///     detection. </summary>
-        /// <param name="frame"> The video frame to submit. </param>
-        /// <returns> A <see cref="Task{LiveCameraResult}"/> representing the asynchronous API call,
-        ///     and containing the celebrities returned by the API. </returns>
-        private async Task<LiveCameraResult> CelebrityAnalysisFunction(VideoFrame frame)
+
+        private async Task<LiveCameraResult> CaptionAnalysisFunction(VideoFrame frame)
         {
             // Encode image. 
             var jpg = frame.Image.ToMemoryStream(".jpg", s_jpegParams);
+
             // Submit image to API. 
-            var domainModelResults = await _visionClient.AnalyzeImageByDomainInStreamAsync("celebrities", jpg);
+            var captionResult = await _visionClient.DescribeImageInStreamAsync(jpg);
+
             // Count the API call. 
             Properties.Settings.Default.VisionAPICallCount++;
             // Output. 
-            var jobject = domainModelResults.Result as JObject;
-            var celebs = jobject.ToObject<VisionAPI.Models.CelebrityResults>().Celebrities;
-            return new LiveCameraResult
-            {
-                // Extract face rectangles from results. 
-                Faces = celebs.Select(c => CreateFace(c.FaceRectangle)).ToArray(),
-                // Extract celebrity names from results. 
-                CelebrityNames = celebs.Select(c => c.Name).ToArray()
-            };
+            return new LiveCameraResult { Captions = captionResult.Captions.ToArray() };
         }
+        
+        private async Task<LiveCameraResult> DenseCaptionAnalysisFunction(VideoFrame frame)
+        {
+            // Encode image. 
+            //var jpg = frame.Image.ToMemoryStream(".jpg", s_jpegParams);
+            // Submit image to API. 
+            VisualFeatures visualFeatures =
+                VisualFeatures.Caption |
+                VisualFeatures.DenseCaptions |
+                VisualFeatures.Objects |
+                VisualFeatures.Read |
+                VisualFeatures.Tags |
+                VisualFeatures.People |
+                VisualFeatures.SmartCrops;
 
+            BinaryData imageData = BinaryData.FromStream(frame.Image.ToMemoryStream());
+            ImageAnalysisResult result = await _imageAnalysis.AnalyzeAsync(imageData, visualFeatures );
+
+
+
+            // Count the API call. 
+            Properties.Settings.Default.VisionAPICallCount++;
+            // Output.
+            return new LiveCameraResult { DenseCaptions = result.DenseCaptions.Values.ToArray() };
+        }
+        
         private BitmapSource VisualizeResult(VideoFrame frame)
         {
             // Draw any results on top of the image. 
@@ -235,8 +230,9 @@ namespace LiveCameraSample
                     MatchAndReplaceFaceRectangles(result.Faces, clientFaces);
                 }
 
-                visImage = Visualization.DrawFaces(visImage, result.Faces, result.CelebrityNames);
                 visImage = Visualization.DrawTags(visImage, result.Tags);
+                visImage = Visualization.DrawCaptions(visImage, result.Captions);
+                visImage = Visualization.DrawDenseCaptions(visImage, result.DenseCaptions);
             }
 
             return visImage;
@@ -254,7 +250,7 @@ namespace LiveCameraSample
                 MessageArea.Text = "No cameras found!";
             }
 
-            var comboBox = sender as ComboBox;
+            var comboBox = sender as System.Windows.Controls.ComboBox;
             comboBox.ItemsSource = Enumerable.Range(0, numCameras).Select(i => string.Format("Camera {0}", i + 1));
             comboBox.SelectedIndex = 0;
         }
@@ -266,7 +262,7 @@ namespace LiveCameraSample
         {
             var modes = (AppMode[])Enum.GetValues(typeof(AppMode));
 
-            var comboBox = sender as ComboBox;
+            var comboBox = sender as System.Windows.Controls.ComboBox;
             comboBox.ItemsSource = modes.Select(m => m.ToString());
             comboBox.SelectedIndex = 0;
         }
@@ -276,20 +272,21 @@ namespace LiveCameraSample
             // Disable "most-recent" results display. 
             _fuseClientRemoteResults = false;
 
-            var comboBox = sender as ComboBox;
+            var comboBox = sender as System.Windows.Controls.ComboBox;
             var modes = (AppMode[])Enum.GetValues(typeof(AppMode));
             _mode = modes[comboBox.SelectedIndex];
             switch (_mode)
             {
-                case AppMode.Faces:
-                    _grabber.AnalysisFunction = FacesAnalysisFunction;
-                    break;
                 case AppMode.Tags:
                     _grabber.AnalysisFunction = TaggingAnalysisFunction;
                     break;
-                case AppMode.Celebrities:
-                    _grabber.AnalysisFunction = CelebrityAnalysisFunction;
+                case AppMode.Description:
+                    _grabber.AnalysisFunction = CaptionAnalysisFunction;
                     break;
+                case AppMode.DenseCaption:
+                    _grabber.AnalysisFunction = DenseCaptionAnalysisFunction;
+                    break;
+                    
                 default:
                     _grabber.AnalysisFunction = null;
                     break;
@@ -317,6 +314,9 @@ namespace LiveCameraSample
             {
                 Endpoint = Properties.Settings.Default.VisionAPIHost
             };
+            string endpoint = Environment.GetEnvironmentVariable("VISION_ENDPOINT");
+            string key = Environment.GetEnvironmentVariable("VISION_KEY");
+            _imageAnalysis = new ImageAnalysisClient(new Uri(endpoint),new AzureKeyCredential(key));
 
             // How often to analyze. 
             _grabber.TriggerAnalysisOnInterval(Properties.Settings.Default.AnalysisInterval);
@@ -350,20 +350,6 @@ namespace LiveCameraSample
         {
             Process.Start(new ProcessStartInfo(e.Uri.AbsoluteUri));
             e.Handled = true;
-        }
-
-        private FaceAPI.Models.DetectedFace CreateFace(VisionAPI.Models.FaceRectangle rect)
-        {
-            return new FaceAPI.Models.DetectedFace
-            {
-                FaceRectangle = new FaceAPI.Models.FaceRectangle
-                {
-                    Left = rect.Left,
-                    Top = rect.Top,
-                    Width = rect.Width,
-                    Height = rect.Height
-                }
-            };
         }
 
         private void MatchAndReplaceFaceRectangles(FaceAPI.Models.DetectedFace[] faces, OpenCvSharp.Rect[] clientRects)

@@ -37,8 +37,12 @@
 using System;
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Windows.Media;
+using Azure.AI.Vision.Common;
+using Microsoft.Azure.CognitiveServices.Vision.ComputerVision.Models;
 using OpenCvSharp;
 
 namespace VideoFrameAnalyzer
@@ -242,8 +246,12 @@ namespace VideoFrameAnalyzer
                     VideoFrameMetadata meta;
                     meta.Index = frameCount;
                     meta.Timestamp = timestamp;
-                    VideoFrame vframe = new VideoFrame(image, meta);
 
+                    //Package the image as VisionSource
+                    //TODO remove test static image
+                    //Uri imageURL = new Uri("https://aka.ms/azsdk/image-analysis/sample.jpg");
+                    //VideoFrame vframe = new VideoFrame(image, meta, imageURL);
+                    VideoFrame vframe = new VideoFrame(image, meta, null);
                     // Raise the new frame event
                     LogMessage("Producer: new frame provided, should analyze? Frame num: {0}", meta.Index);
                     OnNewFrameProvided(vframe);
@@ -295,13 +303,7 @@ namespace VideoFrameAnalyzer
                     // Get the next processing task.
                     Task<NewResultEventArgs> nextTask = null;
 
-                    // Blocks if m_analysisTaskQueue.Count == 0
-                    // IOE means that Take() was called on a completed collection.
-                    // Some other thread can call CompleteAdding after we pass the
-                    // IsCompleted check but before we call Take.
-                    // In this example, we can simply catch the exception since the
-                    // loop will break on the next iteration.
-                    // See https://msdn.microsoft.com/en-us/library/dd997371(v=vs.110).aspx
+                   
                     try
                     {
                         nextTask = _analysisTaskQueue.Take();

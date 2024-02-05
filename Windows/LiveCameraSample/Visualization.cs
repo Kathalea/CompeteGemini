@@ -31,13 +31,15 @@
 // WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 // 
 
+using Azure.AI.Vision.ImageAnalysis;
+using Microsoft.Azure.CognitiveServices.Vision.ComputerVision.Models;
 using System;
 using System.Globalization;
 using System.Text;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
-using FaceAPI = Microsoft.Azure.CognitiveServices.Vision.Face;
+using static System.Net.Mime.MediaTypeNames;
 using VisionAPI = Microsoft.Azure.CognitiveServices.Vision.ComputerVision;
 
 namespace LiveCameraSample
@@ -97,68 +99,58 @@ namespace LiveCameraSample
             return DrawOverlay(baseImage, drawAction);
         }
 
-        public static BitmapSource DrawFaces(BitmapSource baseImage, FaceAPI.Models.DetectedFace[] faces, string[] celebName)
+        public static BitmapSource DrawCaptions(BitmapSource baseImage, ImageCaption[] captions)
         {
-            if (faces == null)
+            if (captions == null)
             {
                 return baseImage;
             }
 
             Action<DrawingContext, double> drawAction = (drawingContext, annotationScale) =>
             {
-                for (int i = 0; i < faces.Length; i++)
+                double y = 0;
+                foreach (var caption in captions)
                 {
-                    var face = faces[i];
-                    if (face.FaceRectangle == null) { continue; }
-
-                    Rect faceRect = new Rect(
-                        face.FaceRectangle.Left, face.FaceRectangle.Top,
-                        face.FaceRectangle.Width, face.FaceRectangle.Height);
-
-                    var summary = new StringBuilder();
-
-                    if (face.FaceAttributes != null)
-                    {
-                        summary.Append(Aggregation.SummarizeFaceAttributes(face.FaceAttributes));
-                    }
-
-                    if (celebName?[i] != null)
-                    {
-                        summary.Append(celebName[i]);
-                    }
-
-                    faceRect.Inflate(6 * annotationScale, 6 * annotationScale);
-
-                    double lineThickness = 4 * annotationScale;
-
-                    drawingContext.DrawRectangle(
-                        Brushes.Transparent,
-                        new Pen(s_lineBrush, lineThickness),
-                        faceRect);
-
-                    if (summary.Length > 0)
-                    {
-                        FormattedText ft = new FormattedText(summary.ToString(),
-                            CultureInfo.CurrentCulture, FlowDirection.LeftToRight, s_typeface,
-                            16 * annotationScale, Brushes.Black);
-
-                        var pad = 3 * annotationScale;
-
-                        var ypad = pad;
-                        var xpad = pad + 4 * annotationScale;
-                        var origin = new System.Windows.Point(
-                            faceRect.Left + xpad - lineThickness / 2,
-                            faceRect.Top - ft.Height - ypad + lineThickness / 2);
-                        var rect = ft.BuildHighlightGeometry(origin).GetRenderBounds(null);
-                        rect.Inflate(xpad, ypad);
-
-                        drawingContext.DrawRectangle(s_lineBrush, null, rect);
-                        drawingContext.DrawText(ft, origin);
-                    }
+                    // Create formatted text--in a particular font at a particular size
+                    FormattedText ft = new FormattedText(caption.Text,
+                        CultureInfo.CurrentCulture, FlowDirection.LeftToRight, s_typeface,
+                        42 * annotationScale, Brushes.Black);
+                    // Instead of calling DrawText (which can only draw the text in a solid colour), we
+                    // convert to geometry and use DrawGeometry, which allows us to add an outline. 
+                    var geom = ft.BuildGeometry(new System.Windows.Point(10 * annotationScale, y));
+                    drawingContext.DrawGeometry(s_lineBrush, new Pen(Brushes.Black, 2 * annotationScale), geom);
+                    // Move line down
+                    y += 42 * annotationScale;
                 }
             };
 
             return DrawOverlay(baseImage, drawAction);
         }
+
+
+        public static BitmapSource DrawDenseCaptions(BitmapSource baseImage, DenseCaption[] densecaptions)
+        {
+            if (densecaptions == null)
+            {
+                return baseImage;
+            }
+
+            Action<DrawingContext, double> drawAction = (drawingContext, annotationScale) =>
+            {
+                double y = 0;
+                foreach (DenseCaption densecaption in densecaptions)
+                {
+                    string caption = densecaption.Text + "   Score : " + densecaption.Confidence.ToString("0.000");
+                    FormattedText formattedText = new FormattedText(caption, CultureInfo.GetCultureInfo("en-us"), FlowDirection.LeftToRight, new Typeface("Verdana"), 16, Brushes.Black);
+                    drawingContext.DrawText(formattedText, new Point(0, y)); 
+                    // Move line down
+                    y += 16 * annotationScale;
+                }
+            };
+
+            return DrawOverlay(baseImage, drawAction);
+        }
+
+
     }
 }

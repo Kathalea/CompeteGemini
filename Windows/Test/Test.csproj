@@ -1,0 +1,25 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Remove="Photo\houseDraw.jpg" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Azure.AI.Vision.Common" Version="0.15.1-beta.1" />
+    <PackageReference Include="Azure.AI.Vision.ImageAnalysis" Version="1.0.0-beta.1" />
+    <PackageReference Include="Azure.Core" Version="1.37.0" />
+    <PackageReference Include="Microsoft.Azure.CognitiveServices.Vision.ComputerVision" Version="7.0.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="Photo\houseDraw.jpg" />
+  </ItemGroup>
+
+</Project>

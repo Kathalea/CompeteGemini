@@ -31,6 +31,8 @@
 // WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 // 
 
+using Azure.AI.Vision.ImageAnalysis;
+using Microsoft.Azure.CognitiveServices.Vision.ComputerVision.Models;
 using FaceAPI = Microsoft.Azure.CognitiveServices.Vision.Face.Models;
 using VisionAPI = Microsoft.Azure.CognitiveServices.Vision.ComputerVision.Models;
 
@@ -42,5 +44,7 @@ namespace LiveCameraSample
         public FaceAPI.DetectedFace[] Faces { get; set; } = null;
         public string[] CelebrityNames { get; set; } = null;
         public VisionAPI.ImageTag[] Tags { get; set; } = null;
+        public ImageCaption[] Captions { get; set; } = null;
+        public DenseCaption[] DenseCaptions { get; set; } = null;
     }
 }
