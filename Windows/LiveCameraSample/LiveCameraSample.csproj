@@ -40,6 +40,9 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <ItemGroup>
+    <Reference Include="Azure.AI.Translation.Text, Version=1.0.0.0, Culture=neutral, PublicKeyToken=92742159e12e44c8, processorArchitecture=MSIL">
+      <HintPath>..\packages\Azure.AI.Translation.Text.1.0.0-beta.1\lib\netstandard2.0\Azure.AI.Translation.Text.dll</HintPath>
+    </Reference>
     <Reference Include="Azure.AI.Vision.Common, Version=0.15.1.26, Culture=neutral, PublicKeyToken=d2e6dcccb609e663, processorArchitecture=MSIL">
       <HintPath>..\packages\Azure.AI.Vision.Common.0.15.1-beta.1\lib\netstandard2.0\Azure.AI.Vision.Common.dll</HintPath>
     </Reference>

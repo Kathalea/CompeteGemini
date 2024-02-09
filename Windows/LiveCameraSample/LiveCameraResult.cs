@@ -31,8 +31,8 @@
 // WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 // 
 
-using Azure.AI.Vision.ImageAnalysis;
 using Microsoft.Azure.CognitiveServices.Vision.ComputerVision.Models;
+using System.Collections.Generic;
 using FaceAPI = Microsoft.Azure.CognitiveServices.Vision.Face.Models;
 using VisionAPI = Microsoft.Azure.CognitiveServices.Vision.ComputerVision.Models;
 
@@ -45,6 +45,21 @@ namespace LiveCameraSample
         public string[] CelebrityNames { get; set; } = null;
         public VisionAPI.ImageTag[] Tags { get; set; } = null;
         public ImageCaption[] Captions { get; set; } = null;
-        public DenseCaption[] DenseCaptions { get; set; } = null;
+        public List<DenseCaptionOverride> DenseCaptions { get; set; } = null;
+
+    }
+    public class DenseCaptionOverride
+    {
+        public string denseCaptionOriginal { get; set; } = null;
+        public string denseCaptionTranslate { get; set; } = null;
+        public float confidenceLevel { get; set; }
+
+        public DenseCaptionOverride(string denseCaptionOriginal1, string denseCaptionTranslate1, float confidenceLevel1)
+        {
+            denseCaptionOriginal = denseCaptionOriginal1;
+            denseCaptionTranslate = denseCaptionTranslate1;
+            confidenceLevel = confidenceLevel1;
+        }
+
     }
 }

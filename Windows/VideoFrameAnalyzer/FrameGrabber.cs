@@ -200,7 +200,7 @@ namespace VideoFrameAnalyzer
             _analysisTaskQueue = new BlockingCollection<Task<NewResultEventArgs>>();
 
             var timerIterations = 0;
-
+            string resultMode = "...";
             // Create a background thread that will grab frames in a loop.
             _producerTask = Task.Factory.StartNew(() =>
             {
@@ -251,7 +251,7 @@ namespace VideoFrameAnalyzer
                     //TODO remove test static image
                     //Uri imageURL = new Uri("https://aka.ms/azsdk/image-analysis/sample.jpg");
                     //VideoFrame vframe = new VideoFrame(image, meta, imageURL);
-                    VideoFrame vframe = new VideoFrame(image, meta, null);
+                    VideoFrame vframe = new VideoFrame(image, meta, null, resultMode);
                     // Raise the new frame event
                     LogMessage("Producer: new frame provided, should analyze? Frame num: {0}", meta.Index);
                     OnNewFrameProvided(vframe);

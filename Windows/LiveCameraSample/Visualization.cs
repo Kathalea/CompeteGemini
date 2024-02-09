@@ -127,30 +127,5 @@ namespace LiveCameraSample
             return DrawOverlay(baseImage, drawAction);
         }
 
-
-        public static BitmapSource DrawDenseCaptions(BitmapSource baseImage, DenseCaption[] densecaptions)
-        {
-            if (densecaptions == null)
-            {
-                return baseImage;
-            }
-
-            Action<DrawingContext, double> drawAction = (drawingContext, annotationScale) =>
-            {
-                double y = 0;
-                foreach (DenseCaption densecaption in densecaptions)
-                {
-                    string caption = densecaption.Text + "   Score : " + densecaption.Confidence.ToString("0.000");
-                    FormattedText formattedText = new FormattedText(caption, CultureInfo.GetCultureInfo("en-us"), FlowDirection.LeftToRight, new Typeface("Verdana"), 16, Brushes.Black);
-                    drawingContext.DrawText(formattedText, new Point(0, y)); 
-                    // Move line down
-                    y += 16 * annotationScale;
-                }
-            };
-
-            return DrawOverlay(baseImage, drawAction);
-        }
-
-
     }
 }

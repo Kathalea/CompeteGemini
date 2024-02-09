@@ -53,17 +53,20 @@ namespace VideoFrameAnalyzer
         /// <summary> Constructor. </summary>
         /// <param name="image">    The image captured by the camera. </param>
         /// <param name="metadata"> The metadata. </param>
-        public VideoFrame(Mat image, VideoFrameMetadata metadata, Uri imageSourceUrl)
+        public VideoFrame(Mat image, VideoFrameMetadata metadata, Uri imageSourceUrl, string resultMode)
         {
             Image = image;
             Metadata = metadata;
             ImageSourceUrl = imageSourceUrl;
+            ResultMode = resultMode;
         }
 
 
         /// <summary> Gets the image for the frame. </summary>
         /// <value> The image. </value>
         public Mat Image { get; }
+
+        public string ResultMode { get; }
 
         public Uri ImageSourceUrl { get; }
 

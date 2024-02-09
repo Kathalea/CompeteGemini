@@ -32,9 +32,11 @@
 // 
 
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Net;
+using System.Text;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -43,11 +45,17 @@ using System.Windows.Navigation;
 using Azure;
 using Azure.AI.Vision.ImageAnalysis;
 using Microsoft.Azure.CognitiveServices.Vision.ComputerVision;
+using Newtonsoft.Json.Linq;
 using OpenCvSharp;
 using OpenCvSharp.Extensions;
 using VideoFrameAnalyzer;
 using FaceAPI = Microsoft.Azure.CognitiveServices.Vision.Face;
 using VisionAPI = Microsoft.Azure.CognitiveServices.Vision.ComputerVision;
+using TranslationAPI = Azure.AI.Translation.Text;
+using Azure.AI.Translation.Text;
+using System.Windows.Input;
+using static System.Net.Mime.MediaTypeNames;
+using Microsoft.Extensions.Azure;
 
 
 namespace LiveCameraSample
@@ -60,6 +68,7 @@ namespace LiveCameraSample
         private FaceAPI.FaceClient _faceClient = null;
         private VisionAPI.ComputerVisionClient _visionClient = null;
         private ImageAnalysisClient _imageAnalysis = null;
+        private TextTranslationClient _translationClient = null;
         private readonly FrameGrabber<LiveCameraResult> _grabber;
         private static readonly ImageEncodingParam[] s_jpegParams = {
             new ImageEncodingParam(ImwriteFlags.JpegQuality, 60)
@@ -69,6 +78,7 @@ namespace LiveCameraSample
         private LiveCameraResult _latestResultsToDisplay = null;
         private AppMode _mode;
         private DateTime _startTime;
+        private StringBuilder denseCaptionResultTextStr = new StringBuilder();
 
         public enum AppMode
         {
@@ -81,7 +91,6 @@ namespace LiveCameraSample
         {
             InitializeComponent();
             ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
-
             // Create grabber. 
             _grabber = new FrameGrabber<LiveCameraResult>();
 
@@ -94,12 +103,18 @@ namespace LiveCameraSample
                 {
                     // Display the image in the left pane.
                     LeftImage.Source = e.Frame.Image.ToBitmapSource();
-
                     // If we're fusing client-side face detection with remote analysis, show the
                     // new frame now with the most recent analysis available. 
                     if (_fuseClientRemoteResults)
                     {
                         RightImage.Source = VisualizeResult(e.Frame);
+                        /*foreach (var result in e.Frame.ResultMode)
+                        {
+                            denseCaptionResultTextStr.AppendLine(result.Text);
+                            denseCaptionResultTextStr.Append("Score de confidence : ");
+                            denseCaptionResultTextStr.Append(result.Confidence.ToString("0.00"));
+                        }
+                        DenseCaptionResultText.Text = denseCaptionResultTextStr.ToString();*/
                     }
                 }));
 
@@ -145,6 +160,15 @@ namespace LiveCameraSample
                         if (!_fuseClientRemoteResults)
                         {
                             RightImage.Source = VisualizeResult(e.Frame);
+                            denseCaptionResultTextStr = new StringBuilder();
+                            foreach(var result in _latestResultsToDisplay.DenseCaptions)
+                            {
+                                denseCaptionResultTextStr.Append(result.confidenceLevel.ToString("0.00"));
+                                denseCaptionResultTextStr.Append(" - ");
+                                denseCaptionResultTextStr.Append(result.denseCaptionTranslate);
+                                denseCaptionResultTextStr.Append(Environment.NewLine);
+                            }
+                            DenseCaptionResultText.Text = denseCaptionResultTextStr.ToString();
                         }
                     }
                 }));
@@ -202,39 +226,29 @@ namespace LiveCameraSample
 
             BinaryData imageData = BinaryData.FromStream(frame.Image.ToMemoryStream());
             ImageAnalysisResult result = await _imageAnalysis.AnalyzeAsync(imageData, visualFeatures );
-
-
-
+            // sort by confidence level and translate in french
+            string targetLanguage = "fr";
+            string fromlanguage = "en";
+            List<DenseCaptionOverride> denseCaptionOverrideFRResult = new List<DenseCaptionOverride>();
+            foreach (var densecap in result.DenseCaptions.Values)
+            {
+                Response<IReadOnlyList<TranslatedTextItem>> response = await _translationClient.TranslateAsync(targetLanguage, densecap.Text, sourceLanguage: fromlanguage);
+                IReadOnlyList<TranslatedTextItem> translations = response.Value;
+                TranslatedTextItem translation = translations.FirstOrDefault();
+                DenseCaptionOverride denseCaptionOverrideFR = new DenseCaptionOverride(densecap.Text, translation.Translations.FirstOrDefault().Text, densecap.Confidence) ;
+                denseCaptionOverrideFRResult.Add(denseCaptionOverrideFR);
+            }
+            
             // Count the API call. 
             Properties.Settings.Default.VisionAPICallCount++;
             // Output.
-            return new LiveCameraResult { DenseCaptions = result.DenseCaptions.Values.ToArray() };
+            return new LiveCameraResult { DenseCaptions = denseCaptionOverrideFRResult };
         }
         
         private BitmapSource VisualizeResult(VideoFrame frame)
         {
             // Draw any results on top of the image. 
             BitmapSource visImage = frame.Image.ToBitmapSource();
-
-            var result = _latestResultsToDisplay;
-
-            if (result != null)
-            {
-                // See if we have local face detections for this image.
-                var clientFaces = (OpenCvSharp.Rect[])frame.UserData;
-                if (clientFaces != null && result.Faces != null)
-                {
-                    // If so, then the analysis results might be from an older frame. We need to match
-                    // the client-side face detections (computed on this frame) with the analysis
-                    // results (computed on the older frame) that we want to display. 
-                    MatchAndReplaceFaceRectangles(result.Faces, clientFaces);
-                }
-
-                visImage = Visualization.DrawTags(visImage, result.Tags);
-                visImage = Visualization.DrawCaptions(visImage, result.Captions);
-                visImage = Visualization.DrawDenseCaptions(visImage, result.DenseCaptions);
-            }
-
             return visImage;
         }
 
@@ -301,22 +315,15 @@ namespace LiveCameraSample
                 return;
             }
 
-            // Clean leading/trailing spaces in API keys. 
-            Properties.Settings.Default.FaceAPIKey = Properties.Settings.Default.FaceAPIKey.Trim();
-            Properties.Settings.Default.VisionAPIKey = Properties.Settings.Default.VisionAPIKey.Trim();
+            // Declare API keys. Authenticate the client
 
-            // Create API clients.
-            _faceClient = new FaceAPI.FaceClient(new FaceAPI.ApiKeyServiceClientCredentials(Properties.Settings.Default.FaceAPIKey))
-            {
-                Endpoint = Properties.Settings.Default.FaceAPIHost
-            };
-            _visionClient = new VisionAPI.ComputerVisionClient(new VisionAPI.ApiKeyServiceClientCredentials(Properties.Settings.Default.VisionAPIKey))
-            {
-                Endpoint = Properties.Settings.Default.VisionAPIHost
-            };
-            string endpoint = Environment.GetEnvironmentVariable("VISION_ENDPOINT");
-            string key = Environment.GetEnvironmentVariable("VISION_KEY");
-            _imageAnalysis = new ImageAnalysisClient(new Uri(endpoint),new AzureKeyCredential(key));
+            string endpointVision = Environment.GetEnvironmentVariable("VISION_ENDPOINT");
+            string keyVision = Environment.GetEnvironmentVariable("VISION_KEY");
+            string keyTranslationAPI = Environment.GetEnvironmentVariable("TRANSLATE_TEXT_KEY");
+            //string endpointTranslationAPI = Environment.GetEnvironmentVariable("TRANSLATE_TEXT_ENDPOINT");
+            _imageAnalysis = new ImageAnalysisClient(new Uri(endpointVision),new AzureKeyCredential(keyVision));
+
+            _translationClient = new TextTranslationClient(new AzureKeyCredential(keyTranslationAPI));
 
             // How often to analyze. 
             _grabber.TriggerAnalysisOnInterval(Properties.Settings.Default.AnalysisInterval);
@@ -335,16 +342,6 @@ namespace LiveCameraSample
             await _grabber.StopProcessingAsync();
         }
 
-        private void SettingsButton_Click(object sender, RoutedEventArgs e)
-        {
-            SettingsPanel.Visibility = 1 - SettingsPanel.Visibility;
-        }
-
-        private void SaveSettingsButton_Click(object sender, RoutedEventArgs e)
-        {
-            SettingsPanel.Visibility = Visibility.Hidden;
-            Properties.Settings.Default.Save();
-        }
 
         private void Hyperlink_RequestNavigate(object sender, RequestNavigateEventArgs e)
         {
